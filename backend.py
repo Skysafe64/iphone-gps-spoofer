@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Spoofer GPS — Brique 1
-Backend minimal : ouvre UNE session DVT vivante vers l'iPhone (via le tunnel RSD)
-et la garde ouverte. La page web pousse des coordonnées dedans, sans relancer
-de process à chaque fois.
+GPS Spoofer — Brick 1
+Minimal backend: opens ONE live DVT session to the iPhone (via the RSD tunnel)
+and keeps it open. The web page pushes coordinates into it, without respawning
+a process every time.
 
-Lancement (dans le venv pymobiledevice3) :
+Launch (inside the pymobiledevice3 venv):
     RSD_HOST=<addr> RSD_PORT=<port> python backend.py
 
-RSD_HOST / RSD_PORT viennent de la sortie du tunnel :
+RSD_HOST / RSD_PORT come from the tunnel output:
     sudo pymobiledevice3 lockdown start-tunnel
 """
 import asyncio
@@ -21,40 +21,62 @@ from pathlib import Path
 
 import aiohttp
 
-HERE = Path(__file__).resolve().parent
-FAV_FILE = HERE / "favorites.json"
-NOMINATIM = "https://nominatim.openstreetmap.org/search"
-OSRM = "https://router.project-osrm.org/route/v1"
-
 from aiohttp import web
 
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
+from pymobiledevice3.tunneld.api import get_tunneld_device_by_udid, get_tunneld_devices
 
+HERE = Path(__file__).resolve().parent
+FAV_FILE = HERE / "favorites.json"
+NOMINATIM = "https://nominatim.openstreetmap.org/search"
+OSRM = "https://router.project-osrm.org/route/v1"
+
+# Manual mode: RSD_HOST/RSD_PORT copied from `lockdown start-tunnel`.
+# Auto mode (recommended): leave them unset -> discovery via the `tunneld` daemon.
 RSD_HOST = os.environ.get("RSD_HOST")
 RSD_PORT = os.environ.get("RSD_PORT")
+UDID = os.environ.get("UDID")  # targets the right device when tunneld sees several
 HTTP_PORT = int(os.environ.get("HTTP_PORT", "8765"))
 
 
+async def _open_rsd():
+    """Connect the RSD: manual mode (RSD_HOST/PORT) or auto-discovery via tunneld."""
+    if RSD_HOST and RSD_PORT:
+        rsd = RemoteServiceDiscoveryService((RSD_HOST, int(RSD_PORT)))
+        await rsd.connect()
+        return rsd, f"manual RSD {RSD_HOST}:{RSD_PORT}"
+    # Auto: query the `sudo pymobiledevice3 remote tunneld` daemon
+    if UDID:
+        rsd = await get_tunneld_device_by_udid(UDID)
+    else:
+        devices = await get_tunneld_devices()
+        rsd = devices[0] if devices else None
+    if rsd is None:
+        raise RuntimeError(
+            "tunneld: no device found. Is the daemon running? "
+            "Run: sudo pymobiledevice3 remote tunneld"
+        )
+    return rsd, f"tunneld ({rsd.udid})"
+
+
 async def on_startup(app):
-    """Ouvre la session DVT une fois et la garde dans app['loc']."""
-    if not RSD_HOST or not RSD_PORT:
-        raise RuntimeError("RSD_HOST / RSD_PORT non définis (sortie du tunnel).")
+    """Open the DVT session once and keep it in app['loc']."""
     stack = AsyncExitStack()
-    rsd = RemoteServiceDiscoveryService((RSD_HOST, int(RSD_PORT)))
-    await rsd.connect()
+    rsd, label = await _open_rsd()
     stack.push_async_callback(rsd.close)
     dvt = await stack.enter_async_context(DvtProvider(rsd))
     loc = await stack.enter_async_context(LocationSimulation(dvt))
     app["stack"] = stack
     app["loc"] = loc
     app["connected"] = True
-    app["current"] = None  # position posée, partagée entre tous les appareils
-    app["route"] = None    # trajet armé (mode route), conservé pendant une pause
-    app["trip"] = None     # état de lecture pour /status
+    app["rsd_label"] = label
+    app["current"] = None  # posted position, shared across all devices
+    app["route"] = None    # armed route (route mode), kept across a pause
+    app["trip"] = None     # playback state for /status
     app["trip_task"] = None
-    print(f"[startup] session DVT ouverte via RSD {RSD_HOST}:{RSD_PORT}", flush=True)
+    print(f"[startup] DVT session opened via {label}", flush=True)
 
 
 async def on_cleanup(app):
@@ -71,7 +93,7 @@ async def handle_index(request):
 
 async def handle_status(request):
     return web.json_response({"connected": request.app.get("connected", False),
-                              "rsd": f"{RSD_HOST}:{RSD_PORT}",
+                              "rsd": request.app.get("rsd_label", "?"),
                               "current": request.app.get("current"),
                               "trip": request.app.get("trip")})
 
@@ -80,7 +102,7 @@ async def handle_set(request):
     try:
         data = await request.json()
         lat, lng = float(data["lat"]), float(data["lng"])
-        if not data.get("_trip"):      # un envoi manuel abandonne un trajet en cours
+        if not data.get("_trip"):      # a manual send abandons an ongoing trip
             route_reset(request.app)
         await request.app["loc"].set(lat, lng)
         request.app["current"] = {"lat": lat, "lng": lng}
@@ -99,7 +121,7 @@ async def handle_clear(request):
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
-# --- Favoris (stockés côté serveur → partagés entre tous les appareils) ---
+# --- Favorites (stored server-side -> shared across all devices) ---
 
 def load_favorites():
     if FAV_FILE.exists():
@@ -121,7 +143,7 @@ async def handle_fav_list(request):
 async def handle_fav_add(request):
     try:
         data = await request.json()
-        name = str(data.get("name", "")).strip() or "Sans nom"
+        name = str(data.get("name", "")).strip() or "Unnamed"
         lat, lng = float(data["lat"]), float(data["lng"])
         favs = load_favorites()
         new_id = max([f["id"] for f in favs], default=0) + 1
@@ -142,15 +164,15 @@ async def handle_fav_delete(request):
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
-# --- Recherche par nom (géocodage via Nominatim / OpenStreetMap) ---
+# --- Search by name (geocoding via Nominatim / OpenStreetMap) ---
 
 async def handle_search(request):
     q = request.query.get("q", "").strip()
     if not q:
         return web.json_response([])
-    params = {"q": q, "format": "jsonv2", "limit": "6", "accept-language": "fr"}
-    # User-Agent requis par la politique d'usage de Nominatim
-    headers = {"User-Agent": "gps-spoofer-local/1.0 (usage personnel)"}
+    params = {"q": q, "format": "jsonv2", "limit": "6", "accept-language": "en"}
+    # User-Agent required by Nominatim's usage policy
+    headers = {"User-Agent": "gps-spoofer-local/1.0 (personal use)"}
     try:
         timeout = aiohttp.ClientTimeout(total=10)
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -163,10 +185,10 @@ async def handle_search(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
-# --- Mode route : routing OSRM + lecture du trajet côté serveur ---
+# --- Route mode: OSRM routing + server-side trip playback ---
 
 def _haversine(a, b):
-    """Distance en mètres entre (lat, lng) a et b."""
+    """Distance in meters between (lat, lng) a and b."""
     R = 6371000.0
     p1, p2 = math.radians(a[0]), math.radians(b[0])
     dp = math.radians(b[0] - a[0])
@@ -176,7 +198,7 @@ def _haversine(a, b):
 
 
 def _point_at(coords, segs, target):
-    """Point à `target` mètres le long de la polyligne (interpolation linéaire)."""
+    """Point at `target` meters along the polyline (linear interpolation)."""
     acc = 0.0
     for i, d in enumerate(segs):
         if acc + d >= target:
@@ -188,7 +210,7 @@ def _point_at(coords, segs, target):
 
 
 async def fetch_route(frm, to, profile):
-    """Interroge OSRM, renvoie (coords [[lat,lng]...], distance_m)."""
+    """Query OSRM, return (coords [[lat,lng]...], distance_m)."""
     url = f"{OSRM}/{profile}/{frm[1]},{frm[0]};{to[1]},{to[0]}"
     params = {"overview": "full", "geometries": "geojson"}
     timeout = aiohttp.ClientTimeout(total=15)
@@ -196,23 +218,23 @@ async def fetch_route(frm, to, profile):
         async with session.get(url, params=params) as r:
             data = await r.json()
     if data.get("code") != "Ok" or not data.get("routes"):
-        raise RuntimeError(f"routing: {data.get('code', 'erreur')}")
+        raise RuntimeError(f"routing: {data.get('code', 'error')}")
     route = data["routes"][0]
     coords = [[c[1], c[0]] for c in route["geometry"]["coordinates"]]  # [lng,lat] -> [lat,lng]
     return coords, float(route["distance"])
 
 
 async def trip_player(app):
-    """Avance le long de app['route'] à ~1 Hz, avec allure naturelle et vitesse live."""
+    """Advance along app['route'] at ~1 Hz, with a natural pace and live speed."""
     r = app["route"]
     coords, segs, total = r["coords"], r["segs"], r["total"]
-    dt = 1.0            # 1 Hz : cadence à laquelle iOS émet ses updates
-    factor = 1.0        # variation d'allure (dérive corrélée autour de 1)
+    dt = 1.0            # 1 Hz: the rate at which iOS emits its updates
+    factor = 1.0        # pace variation (correlated drift around 1)
     try:
         while r["traveled"] < total:
-            # accél/décél sur les 40 premiers/derniers mètres
+            # accel/decel over the first/last 40 meters
             ramp = max(0.3, min(1.0, min(r["traveled"], total - r["traveled"]) / 40.0))
-            # allure naturelle : AR(1) qui revient vers 1.0 avec un peu de bruit
+            # natural pace: AR(1) reverting toward 1.0 with a bit of noise
             factor = 1.0 + 0.85 * (factor - 1.0) + random.gauss(0, 0.06)
             factor = max(0.75, min(1.25, factor))
             r["traveled"] = min(total, r["traveled"] + r["speed_mps"] * dt * ramp * factor)
@@ -224,14 +246,14 @@ async def trip_player(app):
             await asyncio.sleep(dt)
         app["trip"] = {"running": False, "traveled": round(total), "total": round(total)}
     except asyncio.CancelledError:
-        # pause : on conserve r['traveled'] pour pouvoir reprendre
+        # pause: we keep r['traveled'] so we can resume
         app["trip"] = {"running": False, "traveled": round(r["traveled"]),
                        "total": round(total)}
         raise
 
 
 def pause_trip(app):
-    """Arrête la lecture mais conserve le trajet et la distance parcourue."""
+    """Stop playback but keep the route and the distance traveled."""
     task = app.get("trip_task")
     if task and not task.done():
         task.cancel()
@@ -239,14 +261,14 @@ def pause_trip(app):
 
 
 def route_reset(app):
-    """Abandonne complètement le trajet (utilisé par un déplacement manuel)."""
+    """Fully abandon the trip (used by a manual move)."""
     pause_trip(app)
     app["route"] = None
     app["trip"] = None
 
 
 async def handle_route_preview(request):
-    """Calcule un trajet, l'arme côté serveur (traveled=0) et renvoie sa géométrie."""
+    """Compute a route, arm it server-side (traveled=0) and return its geometry."""
     try:
         data = await request.json()
         frm = (float(data["from"]["lat"]), float(data["from"]["lng"]))
@@ -266,10 +288,10 @@ async def handle_route_preview(request):
 
 
 async def handle_route_play(request):
-    """Démarre ou reprend la lecture du trajet armé."""
+    """Start or resume playback of the armed route."""
     app = request.app
     if not app.get("route"):
-        return web.json_response({"ok": False, "error": "aucun trajet défini"}, status=400)
+        return web.json_response({"ok": False, "error": "no route defined"}, status=400)
     try:
         data = await request.json()
     except Exception:
@@ -277,7 +299,7 @@ async def handle_route_play(request):
     if "speed_kmh" in data:
         app["route"]["speed_mps"] = float(data["speed_kmh"]) * 1000 / 3600
     if app["route"]["traveled"] >= app["route"]["total"]:
-        app["route"]["traveled"] = 0.0            # arrivé → relance depuis le début
+        app["route"]["traveled"] = 0.0            # arrived -> restart from the beginning
     pause_trip(app)
     app["trip_task"] = asyncio.create_task(trip_player(app))
     return web.json_response({"ok": True})
@@ -295,7 +317,7 @@ async def handle_route_reset(request):
 
 
 async def handle_route_speed(request):
-    """Change la vitesse en direct (curseur)."""
+    """Change the speed live (slider)."""
     try:
         data = await request.json()
         r = request.app.get("route")
@@ -323,7 +345,7 @@ def main():
     app.router.add_post("/route/pause", handle_route_pause)
     app.router.add_post("/route/reset", handle_route_reset)
     app.router.add_post("/route/speed", handle_route_speed)
-    # 0.0.0.0 : accessible aussi depuis ton iPhone / autre appareil du réseau local
+    # 0.0.0.0: also reachable from your iPhone / other devices on the local network
     web.run_app(app, host="0.0.0.0", port=HTTP_PORT)
 
 

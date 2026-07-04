@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <title>Spoofer GPS</title>
+  <title>GPS Spoofer</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
     * { box-sizing: border-box; }
@@ -16,7 +16,10 @@
       border-radius: 14px; padding: 12px 14px; box-shadow: 0 4px 20px rgba(0,0,0,.18);
       width: 250px; font-size: 14px; max-height: calc(100% - 24px); overflow-y: auto;
     }
-    .panel h1 { margin: 0 0 6px; font-size: 15px; }
+    .panel h1 { margin: 0 0 6px; font-size: 15px; display: flex;
+                justify-content: space-between; align-items: center; gap: 8px; }
+    .lang-btn { background: #eef0f3; color: #333; font-size: 11px; font-weight: 600;
+                padding: 3px 8px; border-radius: 7px; }
     .status { font-size: 12px; color: #667; margin-bottom: 8px; }
     .status b.ok { color: #0a5c2b; } .status b.err { color: #a01818; }
     .coords { font-variant-numeric: tabular-nums; font-size: 13px; color: #333;
@@ -101,20 +104,20 @@
   <div id="map"></div>
 
   <div class="panel">
-    <h1>📍 Spoofer GPS</h1>
+    <h1><span data-i18n="appTitle">📍 GPS Spoofer</span><button id="langBtn" class="lang-btn" onclick="toggleLang()">FR</button></h1>
 
     <div class="search">
-      <input id="q" placeholder="Rechercher un lieu…" autocomplete="off">
-      <button onclick="doSearch()" title="Rechercher">🔍</button>
+      <input id="q" data-i18n-ph="searchPlaceholder" placeholder="Search for a place…" autocomplete="off">
+      <button onclick="doSearch()" data-i18n-title="searchTitle" title="Search">🔍</button>
     </div>
     <ul class="results" id="results"></ul>
 
-    <div class="status">Session : <b id="conn">…</b></div>
-    <div class="coords" id="coords">Aucune position posée</div>
-    <div class="hint">Clique sur la carte pour t'y téléporter.</div>
-    <button class="clear" onclick="clearLoc()">Revenir au vrai GPS</button>
+    <div class="status"><span data-i18n="sessionLabel">Session: </span><b id="conn">…</b></div>
+    <div class="coords" id="coords" data-i18n="noPos">No location set</div>
+    <div class="hint" data-i18n="mapHint">Click the map to teleport there.</div>
+    <button class="clear" onclick="clearLoc()" data-i18n="returnRealGps">Back to real GPS</button>
 
-    <div class="section-title">🕹️ Joystick temps réel</div>
+    <div class="section-title" data-i18n="joystickTitle">🕹️ Live joystick</div>
     <div class="joy-speed" id="joySpeed">
       <button data-kmh="5" class="active">🚶 5</button>
       <button data-kmh="12">🏃 12</button>
@@ -122,24 +125,24 @@
       <button data-kmh="60">🚗 60</button>
     </div>
     <div class="joy" id="joy"><div class="joy-knob" id="joyKnob"></div></div>
-    <div class="hint" style="text-align:center; margin-top:6px">Maintiens et pousse dans une direction.</div>
+    <div class="hint" style="text-align:center; margin-top:6px" data-i18n="joyHint">Hold and push in a direction.</div>
 
-    <div class="section-title">🛣️ Mode route</div>
+    <div class="section-title" data-i18n="routeTitle">🛣️ Route mode</div>
     <div class="route-speed">
       <input type="range" id="routeSlider" min="1" max="120" value="30">
       <span id="routeSpeedLabel">30 km/h</span>
     </div>
-    <button class="clear" id="routeDefineBtn" onclick="routeDefine()">Définir un trajet (A → B)</button>
+    <button class="clear" id="routeDefineBtn" onclick="routeDefine()" data-i18n="defineRoute">Set a route (A → B)</button>
     <div id="routeInfo" class="route-info" style="display:none"></div>
     <div class="route-actions" id="routeActions" style="display:none">
-      <button class="route-go" id="routeGoBtn" onclick="routeToggle()">▶︎ Démarrer</button>
-      <button class="clear" onclick="routeReset()">Effacer</button>
+      <button class="route-go" id="routeGoBtn" onclick="routeToggle()" data-i18n="start">▶︎ Start</button>
+      <button class="clear" onclick="routeReset()" data-i18n="clear">Clear</button>
     </div>
 
-    <div class="section-title">⭐ Favoris</div>
+    <div class="section-title" data-i18n="favTitle">⭐ Favorites</div>
     <ul class="favs" id="favList"></ul>
     <div class="fav-add">
-      <input id="favName" placeholder="Nom du lieu actuel">
+      <input id="favName" data-i18n-ph="favNamePlaceholder" placeholder="Name this place">
       <button onclick="addFav()">＋</button>
     </div>
   </div>
@@ -148,6 +151,125 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
+    // --- i18n ---
+    const I18N = {
+      en: {
+        title: 'GPS Spoofer',
+        appTitle: '📍 GPS Spoofer',
+        joystickTitle: '🕹️ Live joystick',
+        routeTitle: '🛣️ Route mode',
+        favTitle: '⭐ Favorites',
+        searchPlaceholder: 'Search for a place…',
+        searchTitle: 'Search',
+        sessionLabel: 'Session: ',
+        mapHint: 'Click the map to teleport there.',
+        returnRealGps: 'Back to real GPS',
+        joyHint: 'Hold and push in a direction.',
+        defineRoute: 'Set a route (A → B)',
+        clear: 'Clear',
+        favNamePlaceholder: 'Name this place',
+        delTitle: 'Delete',
+        start: '▶︎ Start',
+        stop: '⏹ Stop',
+        connOpen: 'open',
+        connClosed: 'closed',
+        connUnreachable: 'backend unreachable',
+        noPos: 'No location set',
+        favEmpty: 'No favorites yet. Set a location, then name it below.',
+        clickStart: '① Click the START on the map…',
+        clickEnd: '② Click the DESTINATION…',
+        routeCalc: 'Calculating route…',
+        posSet: 'Location set ✓',
+        backReal: 'Back to real GPS ✓',
+        favAdded: 'Favorite added ✓',
+        routeStarted: 'On your way ✓',
+        routePaused: 'Paused',
+        arrived: 'Arrived at destination ✓',
+        needPos: 'Set a location on the map first.',
+        needName: 'Give the place a name.',
+        needRoute: 'Set a route first.',
+        searching: 'Searching…',
+        noResults: 'No results',
+        searchError: 'Search error',
+        netError: 'Network error',
+        coords: (lat, lng) => `📌 ${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+        kmh: (n) => `${n} km/h`,
+        errorMsg: (msg) => `Error: ${msg}`,
+        routeInfo: (km, min, speed) => `📏 ${km} km · ~${min} min at ${speed} km/h`,
+        routeProgress: (traveled, km) => `\n▶︎ ${traveled} / ${km} km traveled`,
+      },
+      fr: {
+        title: 'Spoofer GPS',
+        appTitle: '📍 Spoofer GPS',
+        joystickTitle: '🕹️ Joystick temps réel',
+        routeTitle: '🛣️ Mode route',
+        favTitle: '⭐ Favoris',
+        searchPlaceholder: 'Rechercher un lieu…',
+        searchTitle: 'Rechercher',
+        sessionLabel: 'Session : ',
+        mapHint: "Clique sur la carte pour t'y téléporter.",
+        returnRealGps: 'Revenir au vrai GPS',
+        joyHint: 'Maintiens et pousse dans une direction.',
+        defineRoute: 'Définir un trajet (A → B)',
+        clear: 'Effacer',
+        favNamePlaceholder: 'Nom du lieu actuel',
+        delTitle: 'Supprimer',
+        start: '▶︎ Démarrer',
+        stop: '⏹ Arrêter',
+        connOpen: 'ouverte',
+        connClosed: 'fermée',
+        connUnreachable: 'backend injoignable',
+        noPos: 'Aucune position posée',
+        favEmpty: 'Aucun favori. Pose une position puis nomme-la ci-dessous.',
+        clickStart: '① Clique le DÉPART sur la carte…',
+        clickEnd: "② Clique l'ARRIVÉE…",
+        routeCalc: 'Calcul du trajet…',
+        posSet: 'Position posée ✓',
+        backReal: 'Retour au vrai GPS ✓',
+        favAdded: 'Favori ajouté ✓',
+        routeStarted: 'En route ✓',
+        routePaused: 'En pause',
+        arrived: 'Arrivé à destination ✓',
+        needPos: "Pose d'abord une position sur la carte.",
+        needName: 'Donne un nom au lieu.',
+        needRoute: "Définis d'abord un trajet.",
+        searching: 'Recherche…',
+        noResults: 'Aucun résultat',
+        searchError: 'Erreur de recherche',
+        netError: 'Erreur réseau',
+        coords: (lat, lng) => `📌 ${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+        kmh: (n) => `${n} km/h`,
+        errorMsg: (msg) => `Erreur : ${msg}`,
+        routeInfo: (km, min, speed) => `📏 ${km} km · ~${min} min à ${speed} km/h`,
+        routeProgress: (traveled, km) => `\n▶︎ ${traveled} / ${km} km parcourus`,
+      },
+    };
+    let lang = localStorage.getItem('lang') || 'en';
+    function t(key) { return I18N[lang][key]; }
+
+    function applyLang() {
+      document.documentElement.lang = lang;
+      document.title = t('title');
+      document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+      document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = t(el.dataset.i18nPh); });
+      document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
+      // Dynamic bits that data-i18n can't own safely:
+      const coordsEl = document.getElementById('coords');
+      coordsEl.textContent = current ? t('coords')(current.lat, current.lng) : t('noPos');
+      const gb = document.getElementById('routeGoBtn');
+      if (gb) gb.textContent = routePlaying ? t('stop') : t('start');
+      if (!routeSelecting) document.getElementById('routeDefineBtn').textContent = t('defineRoute');
+      if (routeDist && !routePlaying) showRouteInfo(routeDist, null);
+      document.getElementById('langBtn').textContent = lang === 'en' ? 'FR' : 'EN';
+      loadFavs();
+      poll();
+    }
+    function toggleLang() {
+      lang = lang === 'en' ? 'fr' : 'en';
+      localStorage.setItem('lang', lang);
+      applyLang();
+    }
+
     const map = L.map('map', { zoomControl: true }).setView([46.6, 2.4], 5);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19, attribution: '&copy; OpenStreetMap'
@@ -156,7 +278,7 @@
     const pinIcon = L.divIcon({ className: '', html: '<div class="pin"></div>',
                                 iconSize: [20, 20], iconAnchor: [10, 20] });
     let marker = null;
-    let current = null;   // {lat, lng} de la position posée
+    let current = null;   // {lat, lng} of the posted position
 
     let toastTimer = null;
     function toast(msg) {
@@ -170,40 +292,39 @@
       if (marker) marker.setLatLng([lat, lng]);
       else marker = L.marker([lat, lng], { icon: pinIcon }).addTo(map);
       current = { lat, lng };
-      document.getElementById('coords').textContent =
-        `📌 ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      document.getElementById('coords').textContent = t('coords')(lat, lng);
     }
     function removeMarker() {
       if (marker) { map.removeLayer(marker); marker = null; }
       current = null;
-      document.getElementById('coords').textContent = 'Aucune position posée';
+      document.getElementById('coords').textContent = t('noPos');
     }
 
     async function poll() {
       const el = document.getElementById('conn');
       try {
         const j = await (await fetch('/status')).json();
-        el.textContent = j.connected ? 'ouverte' : 'fermée';
+        el.textContent = j.connected ? t('connOpen') : t('connClosed');
         el.className = j.connected ? 'ok' : 'err';
-        // Source de vérité serveur → pin identique sur tous les appareils.
-        // Pause pendant qu'on manie le joystick localement (évite les saccades).
+        // Server is the source of truth → same pin on every device.
+        // Paused while the joystick is used locally (avoids jitter).
         if (!joyActive) {
           if (j.current) drawMarker(j.current.lat, j.current.lng);
           else if (marker) removeMarker();
         }
-        // Progression du trajet (mode route)
+        // Trip progress (route mode)
         const acts = document.getElementById('routeActions');
         if (j.trip && acts && acts.style.display !== 'none') {
           showRouteInfo(j.trip.total, j.trip.traveled);
           const b = document.getElementById('routeGoBtn');
-          if (j.trip.running) { routePlaying = true; b.textContent = '⏹ Arrêter'; }
+          if (j.trip.running) { routePlaying = true; b.textContent = t('stop'); }
           else {
-            if (routePlaying) toast('Arrivé à destination ✓');
-            routePlaying = false; b.textContent = '▶︎ Démarrer';
+            if (routePlaying) toast(t('arrived'));
+            routePlaying = false; b.textContent = t('start');
           }
         }
       } catch (e) {
-        el.textContent = 'backend injoignable'; el.className = 'err';
+        el.textContent = t('connUnreachable'); el.className = 'err';
       }
     }
 
@@ -213,34 +334,36 @@
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ lat, lng })
         })).json();
-        if (!j.ok) { toast('Erreur : ' + j.error); return false; }
+        if (!j.ok) { toast(t('errorMsg')(j.error)); return false; }
         drawMarker(lat, lng);
         if (opts.follow) map.panTo([lat, lng], { animate: true, duration: 0.2 });
-        if (opts.toast) toast('Position posée ✓');
+        if (opts.toast) toast(t('posSet'));
         return true;
-      } catch (e) { toast('Erreur réseau'); return false; }
+      } catch (e) { toast(t('netError')); return false; }
     }
 
-    // Clic carte / favori / recherche : pose ponctuelle (avec toast)
+    // Map click / favorite / search: one-off placement (with toast)
     function setLoc(lat, lng) { return pushLoc(lat, lng, { toast: true }); }
 
     async function clearLoc() {
       try {
         const j = await (await fetch('/clear', { method: 'POST' })).json();
-        if (!j.ok) return toast('Erreur : ' + j.error);
+        if (!j.ok) return toast(t('errorMsg')(j.error));
         removeMarker();
-        toast('Retour au vrai GPS ✓');
-      } catch (e) { toast('Erreur réseau'); }
+        toast(t('backReal'));
+      } catch (e) { toast(t('netError')); }
     }
 
-    // --- Favoris ---
+    // --- Favorites ---
     async function loadFavs() {
       let favs = [];
       try { favs = await (await fetch('/favorites')).json(); } catch (e) {}
       const ul = document.getElementById('favList');
       ul.innerHTML = '';
       if (!favs.length) {
-        ul.innerHTML = '<div class="fav-empty">Aucun favori. Pose une position puis nomme-la ci-dessous.</div>';
+        const empty = document.createElement('div');
+        empty.className = 'fav-empty'; empty.textContent = t('favEmpty');
+        ul.appendChild(empty);
         return;
       }
       for (const f of favs) {
@@ -253,7 +376,7 @@
         go.onclick = () => { map.setView([f.lat, f.lng], Math.max(map.getZoom(), 12)); setLoc(f.lat, f.lng); };
 
         const del = document.createElement('button');
-        del.className = 'fav-del'; del.textContent = '×'; del.title = 'Supprimer';
+        del.className = 'fav-del'; del.textContent = '×'; del.title = t('delTitle');
         del.onclick = async (e) => {
           e.stopPropagation();
           await fetch('/favorites/' + f.id, { method: 'DELETE' });
@@ -266,31 +389,31 @@
     }
 
     async function addFav() {
-      if (!current) return toast('Pose d\'abord une position sur la carte.');
+      if (!current) return toast(t('needPos'));
       const input = document.getElementById('favName');
       const name = input.value.trim();
-      if (!name) return toast('Donne un nom au lieu.');
+      if (!name) return toast(t('needName'));
       const j = await (await fetch('/favorites', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, lat: current.lat, lng: current.lng })
       })).json();
-      if (!j.ok) return toast('Erreur : ' + j.error);
+      if (!j.ok) return toast(t('errorMsg')(j.error));
       input.value = '';
       loadFavs();
-      toast('Favori ajouté ✓');
+      toast(t('favAdded'));
     }
 
-    // --- Recherche par nom ---
+    // --- Search by name ---
     async function doSearch() {
       const q = document.getElementById('q').value.trim();
       const ul = document.getElementById('results');
       if (!q) { ul.innerHTML = ''; return; }
-      ul.innerHTML = '<li style="cursor:default;color:#99a">Recherche…</li>';
+      ul.innerHTML = `<li style="cursor:default;color:#99a">${t('searching')}</li>`;
       let res;
       try { res = await (await fetch('/search?q=' + encodeURIComponent(q))).json(); }
-      catch (e) { ul.innerHTML = '<li style="cursor:default;color:#a01818">Erreur réseau</li>'; return; }
-      if (!Array.isArray(res)) { ul.innerHTML = '<li style="cursor:default;color:#a01818">Erreur de recherche</li>'; return; }
-      if (!res.length) { ul.innerHTML = '<li style="cursor:default;color:#99a">Aucun résultat</li>'; return; }
+      catch (e) { ul.innerHTML = `<li style="cursor:default;color:#a01818">${t('netError')}</li>`; return; }
+      if (!Array.isArray(res)) { ul.innerHTML = `<li style="cursor:default;color:#a01818">${t('searchError')}</li>`; return; }
+      if (!res.length) { ul.innerHTML = `<li style="cursor:default;color:#99a">${t('noResults')}</li>`; return; }
       ul.innerHTML = '';
       for (const r of res) {
         const li = document.createElement('li');
@@ -314,14 +437,14 @@
       else setLoc(e.latlng.lat, e.latlng.lng);
     });
 
-    // --- Joystick temps réel ---
-    const JOY_INTERVAL = 200;            // ms entre deux pas
+    // --- Live joystick ---
+    const JOY_INTERVAL = 200;            // ms between steps
     const joyEl = document.getElementById('joy');
     const knobEl = document.getElementById('joyKnob');
-    let joyVec = { x: 0, y: 0 };          // normalisé -1..1
-    let joyActive = false;                // vrai tant qu'on maintient
+    let joyVec = { x: 0, y: 0 };          // normalized -1..1
+    let joyActive = false;                // true while held
     let speedKmh = 5;
-    let joyInflight = false;              // évite d'empiler les requêtes
+    let joyInflight = false;              // avoids stacking requests
 
     document.getElementById('joySpeed').addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return;
@@ -357,7 +480,7 @@
       if (mag < 0.06 || joyInflight) return;
       if (!current) { const c = map.getCenter(); current = { lat: c.lat, lng: c.lng }; }
       const stepM = (speedKmh * 1000 / 3600) * (JOY_INTERVAL / 1000) * Math.min(mag, 1);
-      const north = -joyVec.y, east = joyVec.x;     // écran : haut = nord
+      const north = -joyVec.y, east = joyVec.x;     // screen: up = north
       const dLat = (north * stepM) / 111320;
       const dLng = (east * stepM) / (111320 * Math.cos(current.lat * Math.PI / 180));
       joyInflight = true;
@@ -366,7 +489,7 @@
     }
     setInterval(joyTick, JOY_INTERVAL);
 
-    // --- Mode route ---
+    // --- Route mode ---
     let routeSelecting = false, routePlaying = false;
     let ptA = null, ptB = null, mA = null, mB = null, routeLine = null;
     let routeSpeedKmh = 30, routeDist = 0;
@@ -378,7 +501,7 @@
 
     document.getElementById('routeSlider').addEventListener('input', (e) => {
       routeSpeedKmh = parseFloat(e.target.value);
-      document.getElementById('routeSpeedLabel').textContent = routeSpeedKmh + ' km/h';
+      document.getElementById('routeSpeedLabel').textContent = t('kmh')(routeSpeedKmh);
       if (routeDist && !routePlaying) showRouteInfo(routeDist, null);
       if (routePlaying) fetch('/route/speed', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -389,7 +512,7 @@
     function routeDefine() {
       routeReset();
       routeSelecting = true;
-      document.getElementById('routeDefineBtn').textContent = '① Clique le DÉPART sur la carte…';
+      document.getElementById('routeDefineBtn').textContent = t('clickStart');
     }
 
     function handleRouteClick(latlng) {
@@ -397,30 +520,30 @@
       if (!ptA) {
         ptA = { lat: latlng.lat, lng: latlng.lng };
         mA = L.marker([ptA.lat, ptA.lng], { icon: flagIcon('#22a06b') }).addTo(map);
-        btn.textContent = '② Clique l\'ARRIVÉE…';
+        btn.textContent = t('clickEnd');
       } else {
         ptB = { lat: latlng.lat, lng: latlng.lng };
         mB = L.marker([ptB.lat, ptB.lng], { icon: flagIcon('#e5484d') }).addTo(map);
         routeSelecting = false;
-        btn.textContent = 'Définir un trajet (A → B)';
+        btn.textContent = t('defineRoute');
         previewRoute();
       }
     }
 
     async function previewRoute() {
       const info = document.getElementById('routeInfo');
-      info.style.display = 'block'; info.textContent = 'Calcul du trajet…';
+      info.style.display = 'block'; info.textContent = t('routeCalc');
       try {
         const j = await (await fetch('/route/preview', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ from: ptA, to: ptB, profile: 'driving', speed_kmh: routeSpeedKmh })
         })).json();
-        if (!j.ok) { info.textContent = 'Erreur : ' + j.error; return; }
+        if (!j.ok) { info.textContent = t('errorMsg')(j.error); return; }
         routeDist = j.distance;
         drawRoute(j.coords);
         showRouteInfo(j.distance, null);
         document.getElementById('routeActions').style.display = 'flex';
-      } catch (e) { info.textContent = 'Erreur réseau'; }
+      } catch (e) { info.textContent = t('netError'); }
     }
 
     function drawRoute(coords) {
@@ -432,28 +555,28 @@
     function showRouteInfo(distM, traveledM) {
       const km = (distM / 1000).toFixed(2);
       const mins = Math.round(distM / (routeSpeedKmh * 1000 / 3600) / 60);
-      let txt = `📏 ${km} km · ~${mins} min à ${routeSpeedKmh} km/h`;
-      if (traveledM != null) txt += `\n▶︎ ${(traveledM / 1000).toFixed(2)} / ${km} km parcourus`;
+      let txt = t('routeInfo')(km, mins, routeSpeedKmh);
+      if (traveledM != null) txt += t('routeProgress')((traveledM / 1000).toFixed(2), km);
       document.getElementById('routeInfo').textContent = txt;
     }
 
     async function routeToggle() {
       const btn = document.getElementById('routeGoBtn');
       if (!routePlaying) {
-        if (!ptA || !ptB) return toast('Définis d\'abord un trajet.');
+        if (!ptA || !ptB) return toast(t('needRoute'));
         try {
           const j = await (await fetch('/route/play', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ speed_kmh: routeSpeedKmh })
           })).json();
-          if (!j.ok) return toast('Erreur : ' + j.error);
-          routePlaying = true; btn.textContent = '⏹ Arrêter';
-          toast('En route ✓');
-        } catch (e) { toast('Erreur réseau'); }
+          if (!j.ok) return toast(t('errorMsg')(j.error));
+          routePlaying = true; btn.textContent = t('stop');
+          toast(t('routeStarted'));
+        } catch (e) { toast(t('netError')); }
       } else {
         await fetch('/route/pause', { method: 'POST' });
-        routePlaying = false; btn.textContent = '▶︎ Démarrer';
-        toast('En pause');
+        routePlaying = false; btn.textContent = t('start');
+        toast(t('routePaused'));
       }
     }
 
@@ -467,14 +590,15 @@
       if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
       document.getElementById('routeInfo').style.display = 'none';
       document.getElementById('routeActions').style.display = 'none';
-      document.getElementById('routeDefineBtn').textContent = 'Définir un trajet (A → B)';
-      document.getElementById('routeGoBtn').textContent = '▶︎ Démarrer';
+      document.getElementById('routeDefineBtn').textContent = t('defineRoute');
+      document.getElementById('routeGoBtn').textContent = t('start');
     }
 
     document.getElementById('q').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') doSearch();
     });
 
+    applyLang();
     poll(); setInterval(poll, 2500);
     loadFavs();
   </script>
