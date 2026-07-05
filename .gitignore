@@ -1,5 +1,4 @@
-# Données personnelles — ne jamais publier
-# (favorites.json peut contenir ton domicile, tes lieux)
+# Données personnelles
 favorites.json
 server.log
 *.log
